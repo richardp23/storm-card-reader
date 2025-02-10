@@ -58,11 +58,13 @@ jobs:
           ls -R src-tauri/target/release/bundle/ || true
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          includeRelease: false
+        shell: bash
+        run: |
+          cd src-tauri
+          cargo tauri build
+          cd ..
+          echo "Build completed - checking outputs:"
+          ls -R src-tauri/target/release/bundle/
 
       # Create output directory and copy files
       - name: Prepare artifacts

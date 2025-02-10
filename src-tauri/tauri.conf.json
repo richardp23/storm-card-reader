@@ -22,7 +22,11 @@
   },
   "bundle": {
     "active": true,
-    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
     "category": "Education",
     "shortDescription": "StormCard Reader Application",
     "publisher": "Richard Perez Jr.",
