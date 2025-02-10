@@ -56,58 +56,13 @@ jobs:
         with:
           args: ${{ matrix.args }}
 
-      - name: Install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Install Rust dependencies
-        run: |
-          cd src-tauri
-          cargo fetch
-
-      - name: Build Next.js
-        run: npm run build
-
-      - name: Initial Rust Build
-        working-directory: ./src-tauri
-        run: cargo build --release
-
-      # Debug step to list build outputs
-      - name: List Build Output Directory
-        shell: bash
-        run: |
-          echo "Listing src-tauri/target directory:"
-          ls -R src-tauri/target/release/
-
-      - name: Build Tauri app
-        shell: bash
-        run: |
-          cd src-tauri
-          cargo tauri build
-          cd ..
-          echo "Build completed - checking outputs:"
-          ls -R src-tauri/target/release/bundle/
-
-      # Create output directory and copy files
-      - name: Prepare artifacts
-        shell: bash
-        run: |
-          mkdir -p build-output
-          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
-            cp src-tauri/target/release/stormcard-reader.exe build-output/ || true
-          else
-            cp -r src-tauri/target/release/bundle/macos/*.app build-output/ || true
-            cp -r src-tauri/target/release/bundle/macos/*.dmg build-output/ || true
-          fi
-          echo "Build output contents:"
-          ls -la build-output/
-
       # Upload build artifacts
       - uses: actions/upload-artifact@v4
         if: success()
         with:
           name: stormcard-reader-${{ matrix.platform }}
-          path: build-output
+          path: |
+            src-tauri/target/release/*.exe
+            src-tauri/target/release/bundle/macos/*.app
+            src-tauri/target/release/bundle/macos/*.dmg
           if-no-files-found: warn 
