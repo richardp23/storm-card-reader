@@ -56,14 +56,18 @@ jobs:
         #   releaseDraft: true
         #   prerelease: false
 
+      # Debug step to list build outputs
+      - name: List Build Output Directory
+        shell: bash
+        run: |
+          echo "Listing src-tauri/target directory:"
+          ls -R src-tauri/target/
+
       # Upload build artifacts
       - uses: actions/upload-artifact@v4
         if: success()
         with:
           name: stormcard-reader-${{ matrix.platform }}
           path: |
-            src-tauri/target/release/bundle/macos/*.app
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-          if-no-files-found: ignore 
+            src-tauri/target/release/bundle/**/*
+          if-no-files-found: warn 

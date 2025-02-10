@@ -1,6 +1,5 @@
-import { invoke } from '@tauri-apps/api/tauri';
-import { appDataDir, join } from '@tauri-apps/api/path';
-import { readDir, createDir, writeFile, readTextFile } from '@tauri-apps/api/fs';
+import { readDir, create, writeFile, readTextFile } from '@tauri-apps/plugin-fs';
+import { path } from '@tauri-apps/api';
 import { SpreadsheetData } from '../excel/types';
 
 export interface StoredSpreadsheet {
@@ -18,13 +17,13 @@ export class StorageManager {
    * Initialize storage directory
    */
   static async initialize(): Promise<void> {
-    const appData = await appDataDir();
-    const storageDir = await join(appData, this.STORAGE_DIR);
+    const appData = await path.appDataDir();
+    const storageDir = await path.join(appData, this.STORAGE_DIR);
     
     try {
       await readDir(storageDir);
     } catch {
-      await createDir(storageDir, { recursive: true });
+      await create(storageDir);
     }
   }
 
@@ -32,19 +31,17 @@ export class StorageManager {
    * Save spreadsheet to persistent storage
    */
   static async saveSpreadsheet(data: SpreadsheetData): Promise<StoredSpreadsheet> {
-    const appData = await appDataDir();
-    const storageDir = await join(appData, this.STORAGE_DIR);
+    const appData = await path.appDataDir();
+    const storageDir = await path.join(appData, this.STORAGE_DIR);
     
     // Generate unique ID
     const id = crypto.randomUUID();
     const fileName = `${id}.xlsx`;
-    const filePath = await join(storageDir, fileName);
+    const filePath = await path.join(storageDir, fileName);
 
     // Save the file
-    await writeFile({
-      path: filePath,
-      contents: await data.originalFile.arrayBuffer()
-    });
+    const buffer = await data.originalFile.arrayBuffer();
+    await writeFile(filePath, new Uint8Array(buffer));
 
     // Create metadata
     const spreadsheet: StoredSpreadsheet = {
@@ -65,8 +62,8 @@ export class StorageManager {
    */
   static async getStoredSpreadsheets(): Promise<StoredSpreadsheet[]> {
     try {
-      const appData = await appDataDir();
-      const metadataPath = await join(appData, this.STORAGE_DIR, this.METADATA_FILE);
+      const appData = await path.appDataDir();
+      const metadataPath = await path.join(appData, this.STORAGE_DIR, this.METADATA_FILE);
       const content = await readTextFile(metadataPath);
       return JSON.parse(content);
     } catch {
@@ -78,11 +75,11 @@ export class StorageManager {
    * Update metadata file
    */
   private static async updateMetadata(newSpreadsheet: StoredSpreadsheet): Promise<void> {
-    const appData = await appDataDir();
-    const metadataPath = await join(appData, this.STORAGE_DIR, this.METADATA_FILE);
+    const appData = await path.appDataDir();
+    const metadataPath = await path.join(appData, this.STORAGE_DIR, this.METADATA_FILE);
     
     // Get existing metadata
-    let spreadsheets = await this.getStoredSpreadsheets();
+    const spreadsheets = await this.getStoredSpreadsheets();
     
     // Add or update spreadsheet
     const index = spreadsheets.findIndex(s => s.id === newSpreadsheet.id);
@@ -93,10 +90,8 @@ export class StorageManager {
     }
 
     // Write updated metadata
-    await writeFile({
-      path: metadataPath,
-      contents: JSON.stringify(spreadsheets, null, 2)
-    });
+    const content = JSON.stringify(spreadsheets, null, 2);
+    await writeFile(metadataPath, new TextEncoder().encode(content));
   }
 
   /**
@@ -109,7 +104,7 @@ export class StorageManager {
     if (!spreadsheet) return null;
 
     try {
-      const content = await readTextFile(spreadsheet.path, { encoding: 'base64' });
+      const content = await readTextFile(spreadsheet.path);
       const buffer = Buffer.from(content, 'base64');
       
       return new File([buffer], spreadsheet.name, {
@@ -128,12 +123,10 @@ export class StorageManager {
     const spreadsheets = await this.getStoredSpreadsheets();
     const filtered = spreadsheets.filter(s => s.id !== id);
     
-    const appData = await appDataDir();
-    const metadataPath = await join(appData, this.STORAGE_DIR, this.METADATA_FILE);
+    const appData = await path.appDataDir();
+    const metadataPath = await path.join(appData, this.STORAGE_DIR, this.METADATA_FILE);
     
-    await writeFile({
-      path: metadataPath,
-      contents: JSON.stringify(filtered, null, 2)
-    });
+    const content = JSON.stringify(filtered, null, 2);
+    await writeFile(metadataPath, new TextEncoder().encode(content));
   }
 } 

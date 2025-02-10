@@ -326,14 +326,11 @@ export class ExcelProcessor {
           console.log(`Updated ${updatedCount} check-ins`);
 
           // Write to buffer with all options needed to maintain formatting
-          const wbout = XLSX.write(workbook, { 
-            type: 'array',
+          const wbout = XLSX.write(workbook, {
             bookType: 'xlsx',
-            cellStyles: true,
+            type: 'buffer',
             compression: true,
-            bookSST: false,
-            cellFormula: true,
-            cellHTML: false
+            bookSST: false
           });
           console.log('Workbook written to buffer, size:', wbout.byteLength);
           

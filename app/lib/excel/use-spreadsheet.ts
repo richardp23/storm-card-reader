@@ -9,13 +9,10 @@ import { useIsTauri } from '../hooks/use-is-tauri';
 // TypeScript declaration for window.__TAURI_INTERNALS__
 declare global {
   interface Window {
-    __TAURI_INTERNALS__?: any;
+    __TAURI_INTERNALS__?: unknown;
     isTauri?: boolean;
   }
 }
-
-// Helper to check if running in Tauri
-const isTauri = typeof window !== 'undefined' && (window.__TAURI_INTERNALS__ || window.isTauri);
 
 export function useSpreadsheet() {
   const [data, setData] = useState<SpreadsheetData | null>(null);
@@ -31,10 +28,10 @@ export function useSpreadsheet() {
       const buffer = await ExcelProcessor.exportWorkbook(dataToSave);
       await writeFile(filePath, buffer);
       setError(null);
-    } catch (err) {
-      console.error('Save failed:', err);
+    } catch (error) {
+      console.error('Save failed:', error);
       setError('Failed to save file. Please try again.');
-      throw err;
+      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -47,8 +44,8 @@ export function useSpreadsheet() {
     try {
       const spreadsheetData = await ExcelProcessor.readFile(file);
       setData(spreadsheetData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load spreadsheet');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to load spreadsheet');
       setData(null);
     } finally {
       setIsLoading(false);
@@ -81,7 +78,8 @@ export function useSpreadsheet() {
       }
       // Only update the state if save was successful or if we're not auto-saving
       setData(updatedData);
-    } catch (err) {
+    } catch (error) {
+      console.error('Check-in failed:', error);
       setError('Failed to check in student. Please try again.');
     }
   }, [data, isTauri, autoSave, autoSaveFilePath, isSaving, saveToFile]);
