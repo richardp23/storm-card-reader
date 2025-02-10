@@ -54,18 +54,15 @@ jobs:
         run: |
           echo "Listing src-tauri/target directory:"
           ls -R src-tauri/target/release/
+          echo "Listing bundle directory (if exists):"
+          ls -R src-tauri/target/release/bundle/ || true
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # Commenting out release creation for now
-        # with:
-        #   tagName: ${{ github.ref_name }}
-        #   releaseName: 'StormCard Reader v${{ github.ref_name }}'
-        #   releaseBody: 'See the assets to download and install this version.'
-        #   releaseDraft: true
-        #   prerelease: false
+        with:
+          includeRelease: false
 
       # Create output directory and copy files
       - name: Prepare artifacts
@@ -75,8 +72,9 @@ jobs:
           if [ "${{ matrix.platform }}" = "windows-latest" ]; then
             cp src-tauri/target/release/stormcard-reader.exe build-output/ || true
           else
-            cp -r src-tauri/target/release/bundle/macos/*.app build-output/ || true
+            cp -r src-tauri/target/release/bundle/macos/stormcard-reader.app build-output/ || true
           fi
+          echo "Build output contents:"
           ls -la build-output/
 
       # Upload build artifacts
