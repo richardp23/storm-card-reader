@@ -24,11 +24,22 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies (Windows only)
+      - name: Install Windows Dependencies
         if: matrix.platform == 'windows-latest'
+        shell: pwsh
         run: |
-          npm install -g windows-build-tools
-          npm install -g node-gyp
+          iwr -useb get.scoop.sh -outfile 'install.ps1'
+          .\install.ps1 -RunAsAdmin
+          scoop install webkit2-gtk
+          $vsPath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vsPath)) {
+            iwr -useb aka.ms/vs/17/release/vs_buildtools.exe -outfile vs_buildtools.exe
+            Start-Process -Wait -FilePath .\vs_buildtools.exe -ArgumentList "--quiet", "--wait", "--norestart", "--nocache", `
+              "--installPath", "$env:ProgramFiles\Microsoft Visual Studio\2022\BuildTools", `
+              "--add", "Microsoft.VisualStudio.Workload.VCTools", `
+              "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041", `
+              "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+          }
 
       - name: Install dependencies
         run: npm install
@@ -46,6 +57,8 @@ jobs:
         with:
           name: stormcard-reader-${{ matrix.platform }}
           path: |
-            src-tauri/target/release/stormcard-reader
-            src-tauri/target/release/stormcard-reader.exe
+            src-tauri/target/release/bundle/macos/*.app
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: ignore 
