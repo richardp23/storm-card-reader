@@ -73,11 +73,9 @@ jobs:
         run: |
           mkdir -p build-output
           if [ "${{ matrix.platform }}" = "windows-latest" ]; then
-            cp -r src-tauri/target/release/bundle/nsis/*.exe build-output/ || true
-            cp -r src-tauri/target/release/bundle/msi/*.msi build-output/ || true
+            cp src-tauri/target/release/stormcard-reader.exe build-output/ || true
           else
             cp -r src-tauri/target/release/bundle/macos/*.app build-output/ || true
-            cp -r src-tauri/target/release/bundle/dmg/*.dmg build-output/ || true
           fi
           ls -la build-output/
 
