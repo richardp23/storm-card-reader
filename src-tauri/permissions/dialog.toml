@@ -1,0 +1,29 @@
+[[permission]]
+identifier = "dialog:allow-save"
+description = "Enables saving files through the dialog plugin"
+commands.allow = ["save"]
+
+[[permission]]
+identifier = "dialog:allow-message"
+description = "Enables showing message dialogs"
+commands.allow = ["message"]
+
+[[permission]]
+identifier = "dialog:allow-ask"
+description = "Enables asking for user input through dialogs"
+commands.allow = ["ask"]
+
+[[permission]]
+identifier = "dialog:allow-confirm"
+description = "Enables confirmation dialogs"
+commands.allow = ["confirm"]
+
+[[permission]]
+identifier = "dialog:allow-open"
+description = "Enables opening files through the dialog plugin"
+commands.allow = ["open"]
+
+[[permission]]
+identifier = "dialog:default"
+description = "Default dialog permissions"
+commands.allow = ["save", "message", "ask", "confirm", "open"] 

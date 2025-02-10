@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useSpreadsheet } from './lib/excel/use-spreadsheet';
+import { AutoSaveToggle } from './components/settings/auto-save-toggle';
 
 export default function Home() {
   const { 
@@ -18,6 +19,7 @@ export default function Home() {
   const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
   const [studentName, setStudentName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -48,6 +50,7 @@ export default function Home() {
 
   const handleConfirm = () => {
     try {
+      setIsSaving(true);
       checkInStudent(xNumber);
       setValidationStatus('idle');
       setXNumber('');
@@ -55,6 +58,8 @@ export default function Home() {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to check in student');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -68,7 +73,10 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen p-8">
+    <main className="min-h-screen p-4">
+      <div className="mb-4">
+        <AutoSaveToggle />
+      </div>
       <div className="max-w-2xl mx-auto space-y-8">
         {/* Header */}
         <header className="text-center">
@@ -155,10 +163,11 @@ export default function Home() {
                 <div className="flex gap-3">
                   <button
                     onClick={handleConfirm}
+                    disabled={isSaving}
                     className="flex-1 py-2 px-4 bg-green-500 text-white rounded-lg 
-                             hover:bg-green-600 transition-colors"
+                             hover:bg-green-600 transition-colors disabled:opacity-50"
                   >
-                    Confirm
+                    {isSaving ? 'Saving...' : 'Confirm'}
                   </button>
                   <button
                     onClick={() => {
@@ -166,8 +175,9 @@ export default function Home() {
                       setXNumber('');
                       setStudentName(null);
                     }}
+                    disabled={isSaving}
                     className="flex-1 py-2 px-4 bg-red-500 text-white rounded-lg 
-                             hover:bg-red-600 transition-colors"
+                             hover:bg-red-600 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>

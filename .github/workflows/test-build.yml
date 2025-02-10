@@ -1,0 +1,51 @@
+name: Test Build
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  test-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies (Windows only)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          npm install -g windows-build-tools
+          npm install -g node-gyp
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          includeRelease: false
+
+      # Upload build artifacts
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: stormcard-reader-${{ matrix.platform }}
+          path: |
+            src-tauri/target/release/stormcard-reader
+            src-tauri/target/release/stormcard-reader.exe
+          if-no-files-found: ignore 

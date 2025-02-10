@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "fs:allow-write"
+description = "Enables write operations to files"
+commands.allow = ["write_file"]
+
+[[permission]]
+identifier = "fs:default"
+description = "Default filesystem permissions"
+commands.allow = ["write_file", "read_file", "read_dir", "create_dir", "exists"] 
