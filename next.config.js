@@ -10,7 +10,9 @@ const nextConfig = {
     unoptimized: true,
   },
   // Configure assetPrefix for proper asset resolution
-  assetPrefix: isProd ? undefined : `http://${internalHost}:3000`,
+  assetPrefix: isProd ? './' : `http://${internalHost}:3000`,
+  // Disable source maps in production
+  productionBrowserSourceMaps: false,
 }
 
 module.exports = nextConfig 

@@ -72,7 +72,8 @@ jobs:
           if [ "${{ matrix.platform }}" = "windows-latest" ]; then
             cp src-tauri/target/release/stormcard-reader.exe build-output/ || true
           else
-            cp -r src-tauri/target/release/bundle/macos/stormcard-reader.app build-output/ || true
+            cp -r src-tauri/target/release/bundle/macos/*.app build-output/ || true
+            cp -r src-tauri/target/release/bundle/macos/*.dmg build-output/ || true
           fi
           echo "Build output contents:"
           ls -la build-output/

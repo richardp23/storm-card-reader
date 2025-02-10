@@ -5,7 +5,7 @@
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
     "devUrl": "http://localhost:3000",
-    "frontendDist": "../out"
+    "frontendDist": ["../out"]
   },
   "app": {
     "windows": [
@@ -17,11 +17,13 @@
       }
     ],
     "security": {
-      "capabilities": ["main-capability"]
+      "capabilities": ["main-capability"],
+      "dangerousRemote": false
     }
   },
   "bundle": {
     "active": true,
+    "icon": ["icons/icon.ico", "icons/icon.png"],
     "category": "Education",
     "shortDescription": "StormCard Reader Application",
     "publisher": "Richard Perez Jr.",
