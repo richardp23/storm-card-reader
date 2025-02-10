@@ -1,57 +1,68 @@
-name: Release
-on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
+name: "publish"
+
+on: pull_request
 
 jobs:
-  release:
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: get version
+        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+
+      - name: create release
+        id: create-release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${process.env.PACKAGE_VERSION}`,
+              name: `StormCard Reader v${process.env.PACKAGE_VERSION}`,
+              body: 'See the assets to download and install this version.',
+              draft: true,
+              prerelease: false
+            })
+            return data.id
+
+  build-tauri:
+    needs: create-release
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest, windows-latest]
+        include:
+          - platform: "macos-latest"
+            args: "--target aarch64-apple-darwin"
+          - platform: "windows-latest"
+            args: ""
+
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: setup node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install Rust stable
+      - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Install frontend dependencies
-        run: npm install
-
-      - name: Install Rust dependencies
-        run: |
-          cd src-tauri
-          cargo fetch
-
-      - name: Build the app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          projectPath: '.'
-          tagName: ${{ github.ref_name }}
-          releaseName: 'StormCard Reader v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
-          args: --verbose
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
       - name: Install Windows Dependencies
         if: matrix.platform == 'windows-latest'
@@ -67,49 +78,34 @@ jobs:
               "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
           }
 
-      - name: Build Next.js
-        run: npm run build
+      - name: install frontend dependencies
+        run: npm install
 
-      - name: Initial Rust Build
-        working-directory: ./src-tauri
-        run: cargo build --release
-
-      # Debug step to list build outputs
-      - name: List Build Output Directory
-        shell: bash
-        run: |
-          echo "Listing src-tauri/target directory:"
-          ls -R src-tauri/target/release/
-          echo "Listing bundle directory (if exists):"
-          ls -R src-tauri/target/release/bundle/ || true
-
-      - name: Build Tauri app
-        shell: bash
-        run: |
-          cd src-tauri
-          cargo tauri build
-          cd ..
-          echo "Build completed - checking outputs:"
-          ls -R src-tauri/target/release/bundle/
-
-      # Create output directory and copy files
-      - name: Prepare artifacts
-        shell: bash
-        run: |
-          mkdir -p build-output
-          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
-            cp src-tauri/target/release/stormcard-reader.exe build-output/ || true
-          else
-            cp -r src-tauri/target/release/bundle/macos/*.app build-output/ || true
-            cp -r src-tauri/target/release/bundle/macos/*.dmg build-output/ || true
-          fi
-          echo "Build output contents:"
-          ls -la build-output/
-
-      # Upload build artifacts
-      - uses: actions/upload-artifact@v4
-        if: success()
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: stormcard-reader-${{ matrix.platform }}
-          path: build-output
-          if-no-files-found: warn 
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+  publish-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    needs: [create-release, build-tauri]
+
+    steps:
+      - name: publish release
+        id: publish-release
+        uses: actions/github-script@v6
+        env:
+          release_id: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: process.env.release_id,
+              draft: false,
+              prerelease: false
+            }) 
