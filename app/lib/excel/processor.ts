@@ -130,17 +130,53 @@ export class ExcelProcessor {
     return X_NUMBER_PATTERN.test(value);
   }
 
-  /**
-   * Read and parse an Excel file
-   */
+  static findStudent(workbook: XLSX.WorkBook, xNumber: string): Student | undefined {
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+    
+    for (let row = 0; row <= range.e.r; row++) {
+      const rowData = this.getRowValues(worksheet, row);
+      
+      // Skip section metadata and header rows
+      if (this.isSectionMetadata(rowData) || rowData[0]?.toLowerCase() === 'id') {
+        continue;
+      }
+
+      const cellValue = this.getCellValue(worksheet, row, this.COLUMN_X_NUMBER);
+      if (cellValue?.toLowerCase() === xNumber.toLowerCase()) {
+        return {
+          xNumber: cellValue,
+          firstName: this.getCellValue(worksheet, row, this.COLUMN_FIRST_NAME) || '',
+          lastName: this.getCellValue(worksheet, row, this.COLUMN_LAST_NAME) || '',
+          isCheckedIn: this.getCellValue(worksheet, row, this.COLUMN_CHECK_IN),
+          rowIndex: row
+        };
+      }
+    }
+    return undefined;
+  }
+
+  static async checkInStudent(workbook: XLSX.WorkBook, xNumber: string, timestamp: string): Promise<XLSX.WorkBook> {
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const student = this.findStudent(workbook, xNumber);
+    
+    if (!student) {
+      throw new Error('Student not found');
+    }
+
+    // Update the check-in cell
+    const checkInCell = XLSX.utils.encode_cell({ r: student.rowIndex, c: this.COLUMN_CHECK_IN });
+    worksheet[checkInCell] = { t: 's', v: timestamp };
+
+    return workbook;
+  }
+
   static async readFile(file: File): Promise<SpreadsheetData> {
-    console.log('Starting to read file:', file.name);
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
       reader.onload = async (e) => {
         try {
-          console.log('File loaded into memory');
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
           const workbook = XLSX.read(data, { 
             type: 'array',
@@ -153,7 +189,7 @@ export class ExcelProcessor {
             throw new Error('The Excel file appears to be empty.');
           }
 
-          // Process first sheet by default (can be modified to handle sheet selection)
+          // Process first sheet by default
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
           if (!worksheet['!ref']) {
             throw new Error('The worksheet appears to be empty.');
@@ -164,7 +200,8 @@ export class ExcelProcessor {
           resolve({ 
             students: processingResult.students, 
             originalFile: file,
-            processingResult 
+            processingResult,
+            workbook
           });
         } catch (error) {
           console.error('Error processing file:', error);
@@ -179,6 +216,20 @@ export class ExcelProcessor {
 
       reader.readAsArrayBuffer(file);
     });
+  }
+
+  static async processWorkbook(workbook: XLSX.WorkBook): Promise<ProcessingResult> {
+    if (workbook.SheetNames.length === 0) {
+      throw new Error('The Excel file appears to be empty.');
+    }
+
+    // Process first sheet by default
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!worksheet['!ref']) {
+      throw new Error('The worksheet appears to be empty.');
+    }
+
+    return await this.processWorksheet(worksheet);
   }
 
   /**

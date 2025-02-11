@@ -1,10 +1,9 @@
 import { useState, useCallback } from 'react';
 import { ExcelProcessor } from './processor';
-import { SpreadsheetData, Student, ProcessingResult, ProcessingError, ImportState } from './types';
-import { save } from '@tauri-apps/plugin-dialog';
-import { writeFile } from '@tauri-apps/plugin-fs';
+import { Student, ImportState } from './types';
+import { readFile, writeFile } from '@tauri-apps/plugin-fs';
 import { useSettingsStore } from '../storage/settings-store';
-import { useIsTauri } from '../hooks/use-is-tauri';
+import * as XLSX from 'xlsx';
 
 // TypeScript declaration for window.__TAURI_INTERNALS__
 declare global {
@@ -15,7 +14,8 @@ declare global {
 }
 
 export function useSpreadsheet() {
-  const [data, setData] = useState<SpreadsheetData | null>(null);
+  const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
+  const [sourceFilePath, setSourceFilePath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -25,170 +25,50 @@ export function useSpreadsheet() {
     processingResult: null,
     status: 'idle'
   });
-  const { autoSave, autoSaveFilePath } = useSettingsStore();
-  const isTauri = useIsTauri();
+  const { directEdit } = useSettingsStore();
 
-  const generateErrorMessage = (error: ProcessingError): string => {
-    const sectionInfo = error.section ? ` in section "${error.section}"` : '';
-    const rowInfo = `Row ${error.rowNumber}${sectionInfo}`;
-
-    switch (error.errorType) {
-      case 'incomplete_header':
-        return `${rowInfo}: Incomplete header row\n` +
-               `Missing columns: ${error.details?.missingColumns?.join(', ')}\n` +
-               `Found columns: ${error.details?.foundColumns?.join(', ')}`;
-      
-      case 'invalid_header':
-        return `${rowInfo}: Invalid header format\n` +
-               `Expected: ${error.details?.expectedColumns?.join(', ')}\n` +
-               `Found: ${error.details?.foundColumns?.join(', ')}\n` +
-               `Invalid columns: ${error.details?.missingColumns?.join(', ')}`;
-      
-      case 'invalid_xnumber':
-        return `${rowInfo}: Invalid X-Number "${error.value}"\n` +
-               'X-Numbers must start with X followed by exactly 8 digits';
-      
-      case 'missing_xnumber':
-        return `${rowInfo}: Missing X-Number`;
-      
-      default:
-        return `${rowInfo}: Unknown error`;
-    }
-  };
-
-  const processFile = useCallback(async (file: File) => {
+  const loadFile = useCallback(async (filePath: string) => {
     setIsLoading(true);
     setError(null);
     
-    const generateErrorSummary = (result: ProcessingResult, includeUserAction: boolean = true): string => {
-      const { errors, totalRows, processedRows, skippedRows } = result;
-      
-      let summary = `Spreadsheet Processing Summary:\n`;
-      summary += `- Total Rows: ${totalRows}\n`;
-      summary += `- Successfully Processed: ${processedRows}\n`;
-      summary += `- Skipped Rows: ${skippedRows}\n`;
-      summary += `- Errors Found: ${errors.length}\n\n`;
-
-      if (errors.length > 0) {
-        // Group errors by section
-        const errorsBySection = errors.reduce((acc, error) => {
-          const section = error.section || 'Unknown Section';
-          if (!acc[section]) acc[section] = [];
-          acc[section].push(error);
-          return acc;
-        }, {} as Record<string, ProcessingError[]>);
-
-        summary += 'Errors by Section:\n';
-        Object.entries(errorsBySection).forEach(([section, sectionErrors]) => {
-          summary += `\n${section}:\n`;
-          sectionErrors.forEach(error => {
-            summary += `  ${generateErrorMessage(error)}\n`;
-          });
-        });
-
-        if (includeUserAction && result.requiresUserAction) {
-          summary += '\nAction Required:\n';
-          summary += '- Fix the errors in the spreadsheet and reimport\n';
-          summary += '- Or click "Continue" to process only valid rows\n';
-          
-          if (skippedRows > 0) {
-            summary += `\nNote: If you continue, ${skippedRows} row(s) will be skipped due to errors.`;
-          }
-        }
-      }
-
-      return summary;
-    };
-    
     try {
-      const spreadsheetData = await ExcelProcessor.readFile(file);
+      // Read the file directly using Tauri's fs API
+      const fileContent = await readFile(filePath);
+      const workbook = XLSX.read(fileContent, { type: 'array' });
+      
+      // Process the workbook
+      const processingResult = await ExcelProcessor.processWorkbook(workbook);
       
       // Handle processing errors or skipped rows
-      if (spreadsheetData.processingResult.errors.length > 0 || spreadsheetData.processingResult.skippedRows > 0) {
-        // For modal, include user action text
-        const modalErrorSummary = generateErrorSummary(spreadsheetData.processingResult, true);
-        
-        // Show modal for validation issues
+      if (processingResult.errors.length > 0 || processingResult.skippedRows > 0) {
         setImportState(prev => ({
           ...prev,
           isModalOpen: true,
-          pendingFile: file,
-          processingResult: spreadsheetData.processingResult,
-          errorSummary: modalErrorSummary,
+          processingResult,
           status: 'paused'
         }));
         return;
       }
-      
-      setData(spreadsheetData);
+
+      setSourceFilePath(filePath);
+      setWorkbook(workbook);
       setImportState(prev => ({ ...prev, status: 'completed' }));
     } catch (error) {
-      // Handle actual errors (file system, parsing, etc.)
       setError(error instanceof Error ? error.message : 'Failed to load spreadsheet');
-      setData(null);
+      setWorkbook(null);
       setImportState(prev => ({ ...prev, status: 'error' }));
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const saveToFile = useCallback(async (dataToSave: SpreadsheetData, filePath: string) => {
-    try {
-      setIsSaving(true);
-      const buffer = await ExcelProcessor.exportWorkbook(dataToSave);
-      await writeFile(filePath, buffer);
-      setError(null);
-    } catch (error) {
-      console.error('Save failed:', error);
-      setError('Failed to save file. Please try again.');
-      throw error;
-    } finally {
-      setIsSaving(false);
-    }
-  }, []);
-
-  const loadFile = useCallback(async (file: File) => {
-    setImportState({
-      isModalOpen: false,
-      pendingFile: file,
-      processingResult: null,
-      status: 'processing'
-    });
-    
-    await processFile(file);
-  }, [processFile]);
-
-  const continueWithValidRows = useCallback(async () => {
-    if (importState.pendingFile && importState.status === 'paused' && importState.processingResult) {
-      // Use the existing processing result instead of reprocessing
-      setImportState(prev => ({ ...prev, isModalOpen: false, status: 'completed' }));
-      setData({
-        students: importState.processingResult.students,
-        originalFile: importState.pendingFile,
-        processingResult: importState.processingResult
-      });
-    }
-  }, [importState.pendingFile, importState.status, importState.processingResult]);
-
-  const cancelImport = useCallback(() => {
-    setImportState({
-      isModalOpen: false,
-      pendingFile: null,
-      processingResult: null,
-      status: 'idle'
-    });
-    setData(null);
-    setError(null);
-  }, []);
-
   const findStudent = useCallback((xNumber: string): Student | undefined => {
-    return data?.students.find(student => 
-      student.xNumber.toLowerCase() === xNumber.toLowerCase()
-    );
-  }, [data]);
+    if (!workbook) return undefined;
+    return ExcelProcessor.findStudent(workbook, xNumber);
+  }, [workbook]);
 
   const checkInStudent = useCallback(async (xNumber: string) => {
-    if (!data || isSaving) return;
+    if (!workbook || !sourceFilePath || isSaving) return;
 
     const timestamp = new Date().toLocaleString('en-US', {
       timeZone: 'America/New_York',
@@ -201,82 +81,62 @@ export function useSpreadsheet() {
       hour12: true
     });
 
-    const updatedData = {
-      ...data,
-      students: data.students.map(student => {
-        if (student.xNumber.toLowerCase() === xNumber.toLowerCase()) {
-          return { ...student, isCheckedIn: timestamp };
-        }
-        return student;
-      })
-    };
-
     try {
-      // If auto-save is enabled and we're in Tauri, save immediately
-      if (isTauri && autoSave && autoSaveFilePath) {
-        await saveToFile(updatedData, autoSaveFilePath);
-      }
-      // Only update the state if save was successful or if we're not auto-saving
-      setData(updatedData);
+      setIsSaving(true);
+      // Update the workbook
+      const updatedWorkbook = await ExcelProcessor.checkInStudent(workbook, xNumber, timestamp);
+      setWorkbook(updatedWorkbook);
+      
+      // Write directly back to the file
+      const buffer = XLSX.write(updatedWorkbook, { type: 'array', bookType: 'xlsx' });
+      await writeFile(sourceFilePath, buffer);
+      
+      setError(null);
     } catch (error) {
       console.error('Check-in failed:', error);
       setError('Failed to check in student. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
-  }, [data, isTauri, autoSave, autoSaveFilePath, isSaving, saveToFile]);
+  }, [workbook, sourceFilePath, isSaving]);
+
+  const continueWithValidRows = useCallback(async () => {
+    if (importState.pendingFile && importState.status === 'paused' && importState.processingResult) {
+      setImportState(prev => ({ ...prev, isModalOpen: false, status: 'completed' }));
+      const spreadsheetData = await ExcelProcessor.readFile(importState.pendingFile);
+      setWorkbook(spreadsheetData.workbook);
+    }
+  }, [importState.pendingFile, importState.status, importState.processingResult]);
+
+  const cancelImport = useCallback(() => {
+    setImportState({
+      isModalOpen: false,
+      pendingFile: null,
+      processingResult: null,
+      status: 'idle'
+    });
+    setWorkbook(null);
+    setError(null);
+  }, []);
 
   const exportSpreadsheet = useCallback(async () => {
-    if (!data || isSaving) {
-      throw new Error('Cannot export: operation in progress or no data available');
-    }
-
-    try {
-      const buffer = await ExcelProcessor.exportWorkbook(data);
-      
-      if (isTauri) {
-        // Tauri environment - use native dialog and file system
-        const filePath = await save({
-          filters: [{
-            name: 'Excel Spreadsheet',
-            extensions: ['xlsx']
-          }],
-          defaultPath: autoSaveFilePath || `updated_${data.originalFile.name}`
-        });
-
-        if (filePath) {
-          await saveToFile(data, filePath);
-        }
-      } else {
-        // Web environment - use browser download
-        const blob = new Blob([buffer], { 
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-        });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `updated_${data.originalFile.name}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      }
-    } catch (err) {
-      console.error('Export error:', err);
-      throw new Error(err instanceof Error ? err.message : 'Failed to export spreadsheet');
-    }
-  }, [data, isTauri, autoSaveFilePath, isSaving, saveToFile]);
+    if (!workbook || !sourceFilePath) return;
+    const buffer = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+    await writeFile(sourceFilePath, buffer);
+  }, [workbook, sourceFilePath]);
 
   return {
-    hasSpreadsheet: !!data,
+    hasSpreadsheet: !!workbook,
     isLoading,
     isSaving,
     error,
     importState,
     loadFile,
-    continueWithValidRows,
-    cancelImport,
     findStudent,
     checkInStudent,
     exportSpreadsheet,
-    processingResult: data?.processingResult
+    continueWithValidRows,
+    cancelImport,
+    directEdit
   };
 } 

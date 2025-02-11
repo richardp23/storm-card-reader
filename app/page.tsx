@@ -2,8 +2,10 @@
 
 import React, { useState } from 'react';
 import { useSpreadsheet } from './lib/excel/use-spreadsheet';
-import { AutoSaveToggle } from './components/settings/auto-save-toggle';
 import { ImportErrorModal } from './components/ImportErrorModal';
+import { SettingsModal } from './components/settings/settings-modal';
+import { Cog } from 'lucide-react';
+import { open } from '@tauri-apps/plugin-dialog';
 
 export default function Home() {
   const { 
@@ -16,22 +18,29 @@ export default function Home() {
     checkInStudent,
     exportSpreadsheet,
     continueWithValidRows,
-    cancelImport
+    cancelImport,
+    directEdit
   } = useSpreadsheet();
 
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [xNumber, setXNumber] = useState('');
   const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
   const [studentName, setStudentName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleFileChange = async () => {
     try {
-      await loadFile(file);
+      const filePath = await open({
+        filters: [{
+          name: 'Excel Spreadsheet',
+          extensions: ['xlsx', 'xls']
+        }]
+      });
+      
+      if (!filePath) return;
+      
+      await loadFile(filePath as string);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load file');
@@ -70,7 +79,7 @@ export default function Home() {
 
   const handleExport = async () => {
     try {
-      await exportSpreadsheet();
+      await (exportSpreadsheet as () => Promise<void>)();
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to export spreadsheet');
@@ -79,16 +88,28 @@ export default function Home() {
 
   const handleCancelImport = () => {
     cancelImport();
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
   };
 
   return (
-    <main className="min-h-screen p-4">
-      <div className="mb-4">
-        <AutoSaveToggle />
-      </div>
+    <main className="min-h-screen p-8 relative">
+      {/* Settings button in bottom left */}
+      {!hasSpreadsheet && (
+        <div className="fixed bottom-8 left-8">
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
+            <Cog className="h-6 w-6" />
+          </button>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+      />
+
       <div className="max-w-2xl mx-auto space-y-8">
         {/* Header */}
         <header className="text-center">
@@ -112,22 +133,14 @@ export default function Home() {
             <p className="text-gray-600 dark:text-gray-400 mb-6">
               Select an Excel spreadsheet to begin check-ins
             </p>
-            <label 
-              className={`inline-block px-6 py-3 bg-blue-500 text-white rounded-lg cursor-pointer
-                         hover:bg-blue-600 transition-colors ${
-                           isLoading ? 'opacity-50 cursor-not-allowed' : ''
-                         }`}
+            <button
+              onClick={handleFileChange}
+              disabled={isLoading}
+              className="py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 
+                       transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? 'Loading...' : 'Choose File'}
-              <input 
-                ref={fileInputRef}
-                type="file" 
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleFileChange}
-                disabled={isLoading}
-              />
-            </label>
+            </button>
           </div>
         ) : (
           // Check-in Interface
@@ -208,15 +221,17 @@ export default function Home() {
             )}
 
             {/* Export Button */}
-            <div className="flex justify-end">
-              <button
-                onClick={handleExport}
-                className="py-2 px-4 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 
+            {!directEdit && (
+              <div className="flex justify-end">
+                <button
+                  onClick={handleExport}
+                  className="py-2 px-4 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 
                          dark:border-gray-600 dark:hover:bg-gray-700 transition-colors"
-              >
-                Export Spreadsheet
-              </button>
-            </div>
+                >
+                  Export Spreadsheet
+                </button>
+              </div>
+            )}
           </div>
         )}
         <ImportErrorModal

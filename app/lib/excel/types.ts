@@ -1,3 +1,5 @@
+import * as XLSX from 'xlsx';
+
 export interface Student {
   xNumber: string;
   lastName: string;
@@ -32,6 +34,7 @@ export interface SpreadsheetData {
   students: Student[];
   originalFile: File;
   processingResult: ProcessingResult;
+  workbook: XLSX.WorkBook;
 }
 
 export interface ImportState {
