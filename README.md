@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# StormCard Reader - Spreadsheet Processing Implementation
 
-## Getting Started
+## Current Implementation Flow
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+### 1. File Loading
+```typescript
+- User uploads Excel file
+- File is read into memory as ArrayBuffer
+- XLSX.read() converts it to a workbook object
+- Takes first sheet from workbook.SheetNames[0]
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Header Validation
+```typescript
+- Reads first row (currently assumed to be headers)
+- Validates headers against VALID_HEADERS mapping:
+  firstName: ['first name', 'firstname', 'first', etc.]
+  lastName: ['last name', 'lastname', 'last', etc.]
+  xNumber: ['x#', 'xnumber', 'x number', etc.]
+  checkIn: ['check-in', 'checkin', 'check in', etc.]
+- Returns error if required headers are missing/invalid
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Data Extraction
+```typescript
+- Starts from FIRST_DATA_ROW (currently hardcoded as 2)
+- For each row:
+  - Gets values from each column
+  - Skips row if firstName, lastName, AND xNumber are all empty
+  - Creates Student object with:
+    {
+      firstName: string,
+      lastName: string,
+      xNumber: string,
+      isCheckedIn: false,
+      rowIndex: number
+    }
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4. Return Data
+```typescript
+- Returns SpreadsheetData object:
+  {
+    students: Student[],
+    originalFile: File
+  }
+```
 
-## Learn More
+## Planned Enhancements
 
-To learn more about Next.js, take a look at the following resources:
+### Sheet Selection Capability
+```typescript
+- Add method to list available sheets
+- Allow user to select specific sheet
+- Modify readFile to use selected sheet instead of first sheet
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Combined Sheet Handling
+```typescript
+- Modify FIRST_DATA_ROW to start after metadata row
+- Add X-number validation in extractStudents:
+  - Skip rows where Column A doesn't start with 'X'
+  - Skip rows where Column A is empty
+- Handle section metadata rows (like "Fletcher Consulting")
+- Reset header validation after finding new header rows
+```

@@ -1,21 +1,20 @@
 import * as XLSX from 'xlsx';
-import { Student, SpreadsheetData } from './types';
+import { 
+  Student, 
+  SpreadsheetData, 
+  ProcessingError, 
+  ProcessingResult, 
+  VALID_HEADERS, 
+  X_NUMBER_PATTERN,
+  REQUIRED_COLUMNS 
+} from './types';
 
 export class ExcelProcessor {
-  // Column mappings
-  private static COLUMN_FIRST_NAME = 0;  // Column A
-  private static COLUMN_LAST_NAME = 1;   // Column B
-  private static COLUMN_X_NUMBER = 2;    // Column C
-  private static COLUMN_CHECK_IN = 3;    // Column D
-  private static FIRST_DATA_ROW = 2;     // Start from row 2 (after headers)
-
-  // Valid header variations
-  private static VALID_HEADERS = {
-    firstName: ['first name', 'firstname', 'first', 'given name', 'first_name'],
-    lastName: ['last name', 'lastname', 'last', 'family name', 'last_name'],
-    xNumber: ['x#', 'xnumber', 'x number', 'id', 'student id', 'stormcard', 'x-number', 'x_number', 'x', 'x-id', 'x_id'],
-    checkIn: ['check-in', 'checkin', 'check in', 'attendance', 'check_in', 'checked', 'present', 'here', 'checkbox']
-  };
+  // Column mappings for new schema
+  private static COLUMN_X_NUMBER = 0;    // Column A (ID)
+  private static COLUMN_LAST_NAME = 1;   // Column B (LAST_NAME)
+  private static COLUMN_FIRST_NAME = 2;  // Column C (SPRIDEN_PFN)
+  private static COLUMN_CHECK_IN = 3;    // Column D (SIGN-IN)
 
   /**
    * Normalize header text for comparison
@@ -23,8 +22,115 @@ export class ExcelProcessor {
   private static normalizeHeaderText(text: string): string {
     return text
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, '') // Remove all non-alphanumeric characters
+      .replace(/[^a-z0-9]/g, '')
       .trim();
+  }
+
+  /**
+   * Check if a row contains section metadata
+   */
+  private static isSectionMetadata(row: any[]): boolean {
+    const datePattern = /^\d+\.\d+\.\d+$/;
+    return datePattern.test(row[0]?.toString() || '');
+  }
+
+  /**
+   * Extract section info from metadata row
+   */
+  private static getSectionInfo(row: string[]): string {
+    // Use Column D (index 3) for section info, fall back to Column B if D is empty
+    return row[3]?.trim() || row[1]?.trim() || 'Unknown Section';
+  }
+
+  /**
+   * Check if a row contains headers and provide detailed validation
+   */
+  private static validateHeaderRow(row: string[]): { 
+    isValid: boolean; 
+    error?: ProcessingError;
+  } {
+    const normalizedHeaders = row.map(h => this.normalizeHeaderText(h));
+    
+    // Check if any header cell is empty
+    const missingColumns: string[] = [];
+    const foundColumns: string[] = row.map(h => h.trim());
+    
+    // Check each required column
+    REQUIRED_COLUMNS.forEach((col: string, index: number) => {
+      if (!row[index] || !row[index].trim()) {
+        missingColumns.push(col);
+      }
+    });
+
+    if (missingColumns.length > 0) {
+      return {
+        isValid: false,
+        error: {
+          rowNumber: -1, // Will be set by caller
+          value: row.join(', '),
+          errorType: 'incomplete_header',
+          details: {
+            expectedColumns: REQUIRED_COLUMNS,
+            foundColumns,
+            missingColumns
+          }
+        }
+      };
+    }
+
+    // Define valid patterns for each column
+    const validPatterns = {
+      id: ['id', 'studentid', 'student_id', 'xnumber'],
+      lastName: ['lastname', 'last_name', 'lastnam'],
+      firstName: ['spridenpfn', 'firstname', 'first_name', 'firstnam'],
+      signIn: ['signin', 'sign_in', 'checkin', 'sign-in']
+    };
+
+    // More flexible matching that allows for partial matches and common variations
+    const matchesPattern = (header: string, patterns: string[]) => {
+      const normalized = this.normalizeHeaderText(header);
+      return patterns.some(pattern => {
+        const normalizedPattern = this.normalizeHeaderText(pattern);
+        return normalized.includes(normalizedPattern) || normalizedPattern.includes(normalized);
+      });
+    };
+
+    // Check each header against its patterns
+    const isIdValid = matchesPattern(row[0], validPatterns.id);
+    const isLastNameValid = matchesPattern(row[1], validPatterns.lastName);
+    const isFirstNameValid = matchesPattern(row[2], validPatterns.firstName);
+    const isSignInValid = matchesPattern(row[3], validPatterns.signIn);
+
+    if (!isIdValid || !isLastNameValid || !isFirstNameValid || !isSignInValid) {
+      const invalidColumns: string[] = [];
+      if (!isIdValid) invalidColumns.push('ID');
+      if (!isLastNameValid) invalidColumns.push('LAST_NAME');
+      if (!isFirstNameValid) invalidColumns.push('SPRIDEN_PFN');
+      if (!isSignInValid) invalidColumns.push('SIGN-IN');
+
+      return {
+        isValid: false,
+        error: {
+          rowNumber: -1, // Will be set by caller
+          value: row.join(', '),
+          errorType: 'invalid_header',
+          details: {
+            expectedColumns: REQUIRED_COLUMNS,
+            foundColumns,
+            missingColumns: invalidColumns
+          }
+        }
+      };
+    }
+
+    return { isValid: true };
+  }
+
+  /**
+   * Validate X number format
+   */
+  private static isValidXNumber(value: string): boolean {
+    return X_NUMBER_PATTERN.test(value);
   }
 
   /**
@@ -35,12 +141,10 @@ export class ExcelProcessor {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
           console.log('File loaded into memory');
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
-
-          // Read with more options to better handle empty cells
           const workbook = XLSX.read(data, { 
             type: 'array',
             cellFormula: false,
@@ -52,30 +156,19 @@ export class ExcelProcessor {
             throw new Error('The Excel file appears to be empty.');
           }
 
+          // Process first sheet by default (can be modified to handle sheet selection)
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
           if (!worksheet['!ref']) {
             throw new Error('The worksheet appears to be empty.');
           }
 
-          // Get headers and validate
-          const headerRowCells = this.getHeaderRow(worksheet);
-          console.log('Found headers:', headerRowCells);
+          const processingResult = await this.processWorksheet(worksheet);
           
-          // Validate worksheet structure
-          const validationResult = this.validateWorksheet(worksheet, headerRowCells);
-          if (!validationResult.isValid) {
-            const errorMessage = this.generateHeaderErrorMessage(validationResult.error);
-            throw new Error(errorMessage);
-          }
-
-          const students = this.extractStudents(worksheet);
-          console.log('Extracted students:', students.length);
-          
-          if (students.length > 0) {
-            console.log('First student data:', students[0]);
-          }
-
-          resolve({ students, originalFile: file });
+          resolve({ 
+            students: processingResult.students, 
+            originalFile: file,
+            processingResult 
+          });
         } catch (error) {
           console.error('Error processing file:', error);
           reject(error);
@@ -92,184 +185,94 @@ export class ExcelProcessor {
   }
 
   /**
-   * Generate a helpful error message for header validation failures
+   * Process worksheet and extract student data with error handling
    */
-  private static generateHeaderErrorMessage(error?: string): string {
-    let message = 'Invalid spreadsheet format.\n\n';
-    message += 'Required column headers (in order):\n';
-    message += '- Column A: First Name\n';
-    message += '- Column B: Last Name\n';
-    message += '- Column C: X#\n';
-    message += '- Column D: Check-In\n\n';
-    
-    if (error) {
-      message += `Error: ${error}\n\n`;
-    }
-    
-    message += 'Alternative header names accepted:\n';
-    message += `- First Name: ${this.VALID_HEADERS.firstName.join(', ')}\n`;
-    message += `- Last Name: ${this.VALID_HEADERS.lastName.join(', ')}\n`;
-    message += `- X#: ${this.VALID_HEADERS.xNumber.join(', ')}\n`;
-    message += `- Check-In: ${this.VALID_HEADERS.checkIn.join(', ')}`;
-    
-    return message;
-  }
-
-  /**
-   * Get the header row values
-   */
-  private static getHeaderRow(worksheet: XLSX.WorkSheet): string[] {
-    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-    const headers: string[] = [];
-    
-    console.log('\n=== Reading Headers ===');
-    console.log('Worksheet reference:', worksheet['!ref']);
-    console.log('Range:', range);
-    
-    // Read the first row (headers)
-    for (let col = 0; col <= Math.max(range.e.c, 3); col++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
-      const cell = worksheet[cellAddress];
-      const rawValue = cell ? cell.v.toString().trim() : '';
-      headers[col] = rawValue;
-      
-      console.log(`Column ${String.fromCharCode(65 + col)} (${cellAddress}):`, {
-        raw: rawValue,
-        normalized: this.normalizeHeaderText(rawValue)
-      });
-    }
-    
-    return headers;
-  }
-
-  /**
-   * Check if a header matches any of the valid variations
-   */
-  private static headerMatches(headerText: string, validVariations: string[]): boolean {
-    const normalizedHeader = this.normalizeHeaderText(headerText);
-    return validVariations.some(variation => 
-      this.normalizeHeaderText(variation) === normalizedHeader ||
-      normalizedHeader.includes(this.normalizeHeaderText(variation)) ||
-      this.normalizeHeaderText(variation).includes(normalizedHeader)
-    );
-  }
-
-  /**
-   * Validate worksheet has required columns and proper structure
-   */
-  private static validateWorksheet(worksheet: XLSX.WorkSheet, headers: string[]): { isValid: boolean; error?: string } {
-    if (!worksheet['!ref']) {
-      return { isValid: false, error: 'Worksheet is empty' };
-    }
-
-    console.log('\n=== Validating Headers ===');
-    
-    // Check each required header
-    const missingHeaders: string[] = [];
-    const validationResults = [];
-
-    // First Name validation
-    const firstNameValid = this.headerMatches(headers[0], this.VALID_HEADERS.firstName);
-    validationResults.push({
-      column: 'A',
-      expected: 'First Name',
-      found: headers[0],
-      normalized: this.normalizeHeaderText(headers[0]),
-      valid: firstNameValid,
-      acceptableValues: this.VALID_HEADERS.firstName
-    });
-    if (!firstNameValid) missingHeaders.push('First Name');
-
-    // Last Name validation
-    const lastNameValid = this.headerMatches(headers[1], this.VALID_HEADERS.lastName);
-    validationResults.push({
-      column: 'B',
-      expected: 'Last Name',
-      found: headers[1],
-      normalized: this.normalizeHeaderText(headers[1]),
-      valid: lastNameValid,
-      acceptableValues: this.VALID_HEADERS.lastName
-    });
-    if (!lastNameValid) missingHeaders.push('Last Name');
-
-    // X# validation
-    const xNumberValid = this.headerMatches(headers[2], this.VALID_HEADERS.xNumber);
-    validationResults.push({
-      column: 'C',
-      expected: 'X#',
-      found: headers[2],
-      normalized: this.normalizeHeaderText(headers[2]),
-      valid: xNumberValid,
-      acceptableValues: this.VALID_HEADERS.xNumber
-    });
-    if (!xNumberValid) missingHeaders.push('X#');
-
-    // Check-In validation
-    const checkInValid = this.headerMatches(headers[3], this.VALID_HEADERS.checkIn);
-    validationResults.push({
-      column: 'D',
-      expected: 'Check-In',
-      found: headers[3],
-      normalized: this.normalizeHeaderText(headers[3]),
-      valid: checkInValid,
-      acceptableValues: this.VALID_HEADERS.checkIn
-    });
-    if (!checkInValid) missingHeaders.push('Check-In');
-
-    // Log validation results
-    console.log('\nValidation Results:');
-    validationResults.forEach(result => {
-      console.log(`\nColumn ${result.column}:`, {
-        expected: result.expected,
-        found: result.found,
-        normalized: result.normalized,
-        valid: result.valid,
-        acceptableValues: result.acceptableValues
-      });
-    });
-
-    if (missingHeaders.length > 0) {
-      return {
-        isValid: false,
-        error: `Missing or invalid columns: ${missingHeaders.join(', ')}`
-      };
-    }
-
-    return { isValid: true };
-  }
-
-  /**
-   * Extract student data from worksheet
-   */
-  private static extractStudents(worksheet: XLSX.WorkSheet): Student[] {
+  private static async processWorksheet(worksheet: XLSX.WorkSheet): Promise<ProcessingResult> {
     const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
     const students: Student[] = [];
+    const errors: ProcessingError[] = [];
+    let currentRow = 0;
+    let currentSection = '';
+    let processedRows = 0;
+    let skippedRows = 0;
+    let requiresUserAction = false;
 
-    // Start from row 2 (after headers)
-    for (let row = this.FIRST_DATA_ROW - 1; row <= range.e.r; row++) {
-      const firstName = this.getCellValue(worksheet, row, this.COLUMN_FIRST_NAME);
-      const lastName = this.getCellValue(worksheet, row, this.COLUMN_LAST_NAME);
-      const xNumber = this.getCellValue(worksheet, row, this.COLUMN_X_NUMBER);
-      
-      // Debug row data
-      console.log(`Row ${row + 1} data:`, { firstName, lastName, xNumber });
-      
-      // Skip empty rows
-      if (!firstName && !lastName && !xNumber) {
-        console.log(`Skipping empty row ${row + 1}`);
+    while (currentRow <= range.e.r) {
+      const rowData = this.getRowValues(worksheet, currentRow);
+
+      // Handle section metadata
+      if (this.isSectionMetadata(rowData)) {
+        currentSection = this.getSectionInfo(rowData);
+        currentRow += 1;
+        
+        // Validate next row is header
+        const headerRow = this.getRowValues(worksheet, currentRow);
+        const headerValidation = this.validateHeaderRow(headerRow);
+        
+        if (!headerValidation.isValid && headerValidation.error) {
+          headerValidation.error.rowNumber = currentRow + 1;
+          headerValidation.error.section = currentSection;
+          errors.push(headerValidation.error);
+          requiresUserAction = true;
+          currentRow += 1;
+          continue;
+        }
+        
+        currentRow += 1;
         continue;
       }
 
+      // Get and validate X number
+      const xNumber = this.getCellValue(worksheet, currentRow, this.COLUMN_X_NUMBER);
+      
+      if (!xNumber) {
+        if (rowData.some(cell => cell)) { // If row has any data
+          errors.push({
+            rowNumber: currentRow + 1,
+            value: '',
+            errorType: 'missing_xnumber',
+            section: currentSection
+          });
+        }
+        skippedRows++;
+        currentRow += 1;
+        continue;
+      }
+
+      if (!this.isValidXNumber(xNumber)) {
+        errors.push({
+          rowNumber: currentRow + 1,
+          value: xNumber,
+          errorType: 'invalid_xnumber',
+          section: currentSection
+        });
+        skippedRows++;
+        currentRow += 1;
+        continue;
+      }
+
+      // Process valid student data
       students.push({
-        firstName: firstName || '',
-        lastName: lastName || '',
-        xNumber: xNumber || '',
-        isCheckedIn: false,
-        rowIndex: row + 1
+        xNumber: xNumber,
+        lastName: this.getCellValue(worksheet, currentRow, this.COLUMN_LAST_NAME),
+        firstName: this.getCellValue(worksheet, currentRow, this.COLUMN_FIRST_NAME),
+        isCheckedIn: null, // Initialize as null, will be updated with timestamp when checked in
+        rowIndex: currentRow + 1,
+        section: currentSection
       });
+
+      processedRows++;
+      currentRow += 1;
     }
 
-    return students;
+    return {
+      students,
+      errors,
+      totalRows: range.e.r + 1,
+      processedRows,
+      skippedRows,
+      requiresUserAction
+    };
   }
 
   /**
@@ -278,61 +281,63 @@ export class ExcelProcessor {
   private static getCellValue(worksheet: XLSX.WorkSheet, row: number, col: number): string {
     const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
     const cell = worksheet[cellAddress];
-    const value = cell ? cell.v.toString() : '';
-    console.log(`Reading cell ${cellAddress}:`, value);
-    return value;
+    return cell ? cell.v.toString().trim() : '';
   }
 
   /**
-   * Create a new workbook with updated check-in status
+   * Get all values in a row
+   */
+  private static getRowValues(worksheet: XLSX.WorkSheet, row: number): string[] {
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+    const values: string[] = [];
+    
+    for (let col = 0; col <= range.e.c; col++) {
+      values.push(this.getCellValue(worksheet, row, col));
+    }
+    
+    return values;
+  }
+
+  /**
+   * Export workbook with updated check-in status
    */
   static async exportWorkbook(data: SpreadsheetData): Promise<Uint8Array> {
-    console.log('Starting export for file:', data.originalFile.name);
     return new Promise((resolve, reject) => {
       try {
         const reader = new FileReader();
         
         reader.onload = (e) => {
-          console.log('Original file loaded for export');
           const originalData = new Uint8Array(e.target?.result as ArrayBuffer);
           const workbook = XLSX.read(originalData, { 
             type: 'array',
-            cellFormula: true,  // Enable formulas
+            cellFormula: true,
             cellHTML: false,
-            cellStyles: true    // Maintain styles
+            cellStyles: true
           });
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
           
-          // Update check-in status
-          let updatedCount = 0;
+          // Update check-in status with timestamps
           data.students.forEach(student => {
+            if (student.isCheckedIn) {
             const cellAddress = XLSX.utils.encode_cell({ 
               r: student.rowIndex - 1, 
               c: this.COLUMN_CHECK_IN 
             });
 
-            // Set cell value as boolean
             worksheet[cellAddress] = {
-              t: 'b',  // boolean type
+                t: 's', // string type
               v: student.isCheckedIn,
-              w: student.isCheckedIn ? 'TRUE' : 'FALSE'
+                w: student.isCheckedIn
             };
-
-            if (student.isCheckedIn) {
-              updatedCount++;
-              console.log(`Marked check-in for student at row ${student.rowIndex}:`, student.firstName, student.lastName);
             }
           });
-          console.log(`Updated ${updatedCount} check-ins`);
 
-          // Write to buffer with all options needed to maintain formatting
           const wbout = XLSX.write(workbook, {
             bookType: 'xlsx',
             type: 'buffer',
             compression: true,
             bookSST: false
           });
-          console.log('Workbook written to buffer, size:', wbout.byteLength);
           
           resolve(new Uint8Array(wbout));
         };

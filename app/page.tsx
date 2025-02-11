@@ -3,18 +3,23 @@
 import React, { useState } from 'react';
 import { useSpreadsheet } from './lib/excel/use-spreadsheet';
 import { AutoSaveToggle } from './components/settings/auto-save-toggle';
+import { ImportErrorModal } from './components/ImportErrorModal';
 
 export default function Home() {
   const { 
     hasSpreadsheet, 
     isLoading, 
     error: spreadsheetError, 
+    importState,
     loadFile,
     findStudent,
     checkInStudent,
-    exportSpreadsheet
+    exportSpreadsheet,
+    continueWithValidRows,
+    cancelImport
   } = useSpreadsheet();
 
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [xNumber, setXNumber] = useState('');
   const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
   const [studentName, setStudentName] = useState<string | null>(null);
@@ -72,6 +77,13 @@ export default function Home() {
     }
   };
 
+  const handleCancelImport = () => {
+    cancelImport();
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <main className="min-h-screen p-4">
       <div className="mb-4">
@@ -108,6 +120,7 @@ export default function Home() {
             >
               {isLoading ? 'Loading...' : 'Choose File'}
               <input 
+                ref={fileInputRef}
                 type="file" 
                 accept=".xlsx,.xls"
                 className="hidden"
@@ -206,6 +219,13 @@ export default function Home() {
             </div>
           </div>
         )}
+        <ImportErrorModal
+          isOpen={importState.isModalOpen}
+          error={spreadsheetError}
+          importState={importState}
+          onContinue={continueWithValidRows}
+          onCancel={handleCancelImport}
+        />
       </div>
     </main>
   );
