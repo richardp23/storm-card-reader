@@ -53,6 +53,7 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_BUNDLER_DMG_IGNORE_CI: false
         with:
           args: ${{ matrix.args }}
 
@@ -62,7 +63,7 @@ jobs:
         with:
           name: stormcard-reader-${{ matrix.platform }}
           path: |
-            src-tauri/target/release/*.exe
-            src-tauri/target/release/bundle/macos/*.app
-            src-tauri/target/release/bundle/macos/*.dmg
+            src-tauri/target/release/stormcard-reader.exe
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: warn 
