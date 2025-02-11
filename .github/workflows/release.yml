@@ -3,9 +3,6 @@ name: "publish"
 on:
   release:
     types: [created]
-  push:
-    tags:
-      - 'v*'
 
 jobs:
   create-release:
