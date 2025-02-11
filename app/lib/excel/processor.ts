@@ -4,8 +4,7 @@ import {
   SpreadsheetData, 
   ProcessingError, 
   ProcessingResult, 
-  VALID_HEADERS, 
-  X_NUMBER_PATTERN,
+  X_NUMBER_PATTERN, 
   REQUIRED_COLUMNS 
 } from './types';
 
@@ -29,7 +28,7 @@ export class ExcelProcessor {
   /**
    * Check if a row contains section metadata
    */
-  private static isSectionMetadata(row: any[]): boolean {
+  private static isSectionMetadata(row: (string | null)[]): boolean {
     const datePattern = /^\d+\.\d+\.\d+$/;
     return datePattern.test(row[0]?.toString() || '');
   }
@@ -49,8 +48,6 @@ export class ExcelProcessor {
     isValid: boolean; 
     error?: ProcessingError;
   } {
-    const normalizedHeaders = row.map(h => this.normalizeHeaderText(h));
-    
     // Check if any header cell is empty
     const missingColumns: string[] = [];
     const foundColumns: string[] = row.map(h => h.trim());

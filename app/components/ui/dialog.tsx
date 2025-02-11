@@ -16,8 +16,11 @@ export function Dialog({
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="fixed inset-0 bg-gray-50/80 dark:bg-black/80 backdrop-blur-sm" />
-      <div className="fixed inset-0 overflow-y-auto">
+      <div 
+        className="fixed inset-0 bg-gray-50/80 dark:bg-black/80 backdrop-blur-sm" 
+        onClick={() => onOpenChange?.(false)}
+      />
+      <div className="fixed inset-0 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="min-h-full flex items-center justify-center p-4">
           <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-lg w-full max-w-lg">
             {children}

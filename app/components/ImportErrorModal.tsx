@@ -14,7 +14,6 @@ import { ScrollArea } from './ui/scroll-area';
 
 interface ImportErrorModalProps {
   isOpen: boolean;
-  error: string | null;
   importState: ImportState;
   onContinue: () => void;
   onCancel: () => void;
@@ -22,7 +21,6 @@ interface ImportErrorModalProps {
 
 export function ImportErrorModal({
   isOpen,
-  error,
   importState,
   onContinue,
   onCancel,
@@ -53,7 +51,7 @@ export function ImportErrorModal({
         <DialogHeader>
           <DialogTitle>Spreadsheet Import Issues</DialogTitle>
           <DialogDescription className="text-gray-600 dark:text-gray-400">
-            The following issues were found while processing your spreadsheet:
+            The following issues were found while processing your spreadsheet. You can either fix the errors and reimport, or continue with only the valid rows.
           </DialogDescription>
         </DialogHeader>
         

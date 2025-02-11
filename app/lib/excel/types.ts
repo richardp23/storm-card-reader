@@ -39,6 +39,7 @@ export interface ImportState {
   pendingFile: File | null;
   processingResult: ProcessingResult | null;
   status: 'idle' | 'processing' | 'paused' | 'completed' | 'error';
+  errorSummary?: string;
 }
 
 // Constants for validation

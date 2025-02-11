@@ -56,45 +56,81 @@ export function useSpreadsheet() {
     }
   };
 
-  const generateErrorSummary = (result: ProcessingResult): string => {
-    const { errors, totalRows, processedRows, skippedRows } = result;
+  const processFile = useCallback(async (file: File) => {
+    setIsLoading(true);
+    setError(null);
     
-    let summary = `Spreadsheet Processing Summary:\n`;
-    summary += `- Total Rows: ${totalRows}\n`;
-    summary += `- Successfully Processed: ${processedRows}\n`;
-    summary += `- Skipped Rows: ${skippedRows}\n`;
-    summary += `- Errors Found: ${errors.length}\n\n`;
+    const generateErrorSummary = (result: ProcessingResult, includeUserAction: boolean = true): string => {
+      const { errors, totalRows, processedRows, skippedRows } = result;
+      
+      let summary = `Spreadsheet Processing Summary:\n`;
+      summary += `- Total Rows: ${totalRows}\n`;
+      summary += `- Successfully Processed: ${processedRows}\n`;
+      summary += `- Skipped Rows: ${skippedRows}\n`;
+      summary += `- Errors Found: ${errors.length}\n\n`;
 
-    if (errors.length > 0) {
-      // Group errors by section
-      const errorsBySection = errors.reduce((acc, error) => {
-        const section = error.section || 'Unknown Section';
-        if (!acc[section]) acc[section] = [];
-        acc[section].push(error);
-        return acc;
-      }, {} as Record<string, ProcessingError[]>);
+      if (errors.length > 0) {
+        // Group errors by section
+        const errorsBySection = errors.reduce((acc, error) => {
+          const section = error.section || 'Unknown Section';
+          if (!acc[section]) acc[section] = [];
+          acc[section].push(error);
+          return acc;
+        }, {} as Record<string, ProcessingError[]>);
 
-      summary += 'Errors by Section:\n';
-      Object.entries(errorsBySection).forEach(([section, sectionErrors]) => {
-        summary += `\n${section}:\n`;
-        sectionErrors.forEach(error => {
-          summary += `  ${generateErrorMessage(error)}\n`;
+        summary += 'Errors by Section:\n';
+        Object.entries(errorsBySection).forEach(([section, sectionErrors]) => {
+          summary += `\n${section}:\n`;
+          sectionErrors.forEach(error => {
+            summary += `  ${generateErrorMessage(error)}\n`;
+          });
         });
-      });
 
-      if (result.requiresUserAction) {
-        summary += '\nAction Required:\n';
-        summary += '- Fix the errors in the spreadsheet and reimport\n';
-        summary += '- Or click "Continue" to process only valid rows\n';
-        
-        if (skippedRows > 0) {
-          summary += `\nNote: If you continue, ${skippedRows} row(s) will be skipped due to errors.`;
+        if (includeUserAction && result.requiresUserAction) {
+          summary += '\nAction Required:\n';
+          summary += '- Fix the errors in the spreadsheet and reimport\n';
+          summary += '- Or click "Continue" to process only valid rows\n';
+          
+          if (skippedRows > 0) {
+            summary += `\nNote: If you continue, ${skippedRows} row(s) will be skipped due to errors.`;
+          }
         }
       }
-    }
 
-    return summary;
-  };
+      return summary;
+    };
+    
+    try {
+      const spreadsheetData = await ExcelProcessor.readFile(file);
+      
+      // Handle processing errors or skipped rows
+      if (spreadsheetData.processingResult.errors.length > 0 || spreadsheetData.processingResult.skippedRows > 0) {
+        // For modal, include user action text
+        const modalErrorSummary = generateErrorSummary(spreadsheetData.processingResult, true);
+        
+        // Show modal for validation issues
+        setImportState(prev => ({
+          ...prev,
+          isModalOpen: true,
+          pendingFile: file,
+          processingResult: spreadsheetData.processingResult,
+          errorSummary: modalErrorSummary,
+          status: 'paused'
+        }));
+        return;
+      }
+      
+      setData(spreadsheetData);
+      setImportState(prev => ({ ...prev, status: 'completed' }));
+    } catch (error) {
+      // Handle actual errors (file system, parsing, etc.)
+      setError(error instanceof Error ? error.message : 'Failed to load spreadsheet');
+      setData(null);
+      setImportState(prev => ({ ...prev, status: 'error' }));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const saveToFile = useCallback(async (dataToSave: SpreadsheetData, filePath: string) => {
     try {
@@ -108,42 +144,6 @@ export function useSpreadsheet() {
       throw error;
     } finally {
       setIsSaving(false);
-    }
-  }, []);
-
-  const processFile = useCallback(async (file: File) => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const spreadsheetData = await ExcelProcessor.readFile(file);
-      
-      // Handle processing errors
-      if (spreadsheetData.processingResult.errors.length > 0) {
-        const errorSummary = generateErrorSummary(spreadsheetData.processingResult);
-        setError(errorSummary);
-        
-        if (spreadsheetData.processingResult.requiresUserAction) {
-          // Show modal for user action
-          setImportState(prev => ({
-            ...prev,
-            isModalOpen: true,
-            pendingFile: file,
-            processingResult: spreadsheetData.processingResult,
-            status: 'paused'
-          }));
-          return;
-        }
-      }
-      
-      setData(spreadsheetData);
-      setImportState(prev => ({ ...prev, status: 'completed' }));
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to load spreadsheet');
-      setData(null);
-      setImportState(prev => ({ ...prev, status: 'error' }));
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 

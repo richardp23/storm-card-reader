@@ -97,7 +97,7 @@ export default function Home() {
         </header>
 
         {/* Error Display */}
-        {(error || spreadsheetError) && (
+        {(error || (spreadsheetError && !importState.isModalOpen)) && (
           <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 
                          rounded-xl shadow-lg p-6 text-center">
             {error || spreadsheetError}
@@ -221,7 +221,6 @@ export default function Home() {
         )}
         <ImportErrorModal
           isOpen={importState.isModalOpen}
-          error={spreadsheetError}
           importState={importState}
           onContinue={continueWithValidRows}
           onCancel={handleCancelImport}

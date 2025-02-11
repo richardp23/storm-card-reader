@@ -50,7 +50,7 @@ export function CollapsibleError({ section, errors, defaultOpen = false }: Colla
               
               {error.errorType === 'invalid_xnumber' && (
                 <>
-                  <div className="text-gray-900 dark:text-gray-100">Row {error.rowNumber}: Invalid X-Number "{error.value}"</div>
+                  <div className="text-gray-900 dark:text-gray-100">Row {error.rowNumber}: Invalid X-Number &quot;{error.value}&quot;</div>
                   <div className="pl-4 text-gray-500 dark:text-gray-400">X-Numbers must start with X followed by exactly 8 digits</div>
                 </>
               )}
