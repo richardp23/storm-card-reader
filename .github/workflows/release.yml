@@ -1,6 +1,11 @@
 name: "publish"
 
-on: pull_request
+on:
+  release:
+    types: [created]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   create-release:
